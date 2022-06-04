@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Yellowbrick Documentation</title>
+    <link type="text/css" rel="stylesheet" href="assets/css/bootstrap.css"/>
+    <link type="text/css" rel="stylesheet" href="assets/css/bootstrap-responsive.css"/>
+    <link type="text/css" rel="stylesheet" href="assets/css/pilcrow.css"/>
+    <link type="text/css" rel="stylesheet" href="assets/css/hljs-github.min.css"/>
+    <link type="text/css" rel="stylesheet" href="assets/css/style.css"/>
+  </head>
+<body>
+
+  <div class="container-fluid">
+    <div class="row-fluid">
+      <div class="span3"><ul class="nav nav-list">
+    <li class="sidebar-header-1"><a href="#yellowbrick-documentation">Yellowbrick Documentation</a></li>
+    <li class="sidebar-header-2"><a href="#"></a></li>
+    <li class="sidebar-header-2"><a href="#slowly-changing-dimensions">Slowly Changing Dimensions</a></li>
+    <li class="sidebar-header-2"><a href="#the-fastest-sql-data-warehouse">The fastest SQL data warehouse</a></li>
+    <li class="sidebar-header-2"><a href="#paving-the-yellowbrick-road">Paving the Yellowbrick road</a></li>
+    <li class="sidebar-header-2"><a href="#working-across-clouds">Working across clouds</a></li>
+    <li class="sidebar-header-2"><a href="#the-yellowbrick-approach">The Yellowbrick approach</a></li>
+</ul>
+      </div>
+      <div class="span9 main"><h1 id="yellowbrick-documentation"><a class="header-link" href="#yellowbrick-documentation"></a>Yellowbrick Documentation</h1>
+<p>Holding Page</p>
+<p><strong>Yellowbrick CDWM</strong>: The Yellowbrick advantage starts with the data-warehouse and data-lake capable Cloud Data Warehouse Manager (CDWM). Designed to be cloud-agnostic from the ground-up, CDWM handles the most demanding data requirements with ease. Whether querying millions of rows in sub-second time or billions of rows taking just a little longer, Yellowbrick v6.0 is the <em>best in class</em>  cloud data warehouse.</p>
+<img title="" src="https://raw.githubusercontent.com/creative101v/veguzel/main/2022/06/04-10-02-18-rsYBDiagram_edit_go.png" alt="" data-align="right">
+
+<br br/>
+
+<br br/>
+
+<h2 id=""><a class="header-link" href="#"></a></h2>
+<h2 id="slowly-changing-dimensions"><a class="header-link" href="#slowly-changing-dimensions"></a>Slowly Changing Dimensions</h2>
+<pre class="hljs"><code><span class="hljs-comment">-- Define the dates used in validity - assume whole 24 hour cycles</span>
+<span class="hljs-keyword">DECLARE</span> <span class="hljs-variable">@Yesterday</span> <span class="hljs-type">INT</span> <span class="hljs-operator">=</span> (<span class="hljs-keyword">YEAR</span>(DATEADD(dd,<span class="hljs-number">-1</span>,GETDATE())) <span class="hljs-operator">*</span> <span class="hljs-number">10000</span>) <span class="hljs-operator">+</span> (<span class="hljs-keyword">MONTH</span>(DATEADD(dd,<span class="hljs-number">-1</span>,GETDATE())) <span class="hljs-operator">*</span> <span class="hljs-number">100</span>) <span class="hljs-operator">+</span> <span class="hljs-keyword">DAY</span>(DATEADD(dd,<span class="hljs-number">-1</span>,GETDATE()))
+<span class="hljs-keyword">DECLARE</span> <span class="hljs-variable">@Today</span> <span class="hljs-type">INT</span> <span class="hljs-operator">=</span> (<span class="hljs-keyword">YEAR</span>(GETDATE()) <span class="hljs-operator">*</span> <span class="hljs-number">10000</span>) <span class="hljs-operator">+</span> (<span class="hljs-keyword">MONTH</span>(GETDATE()) <span class="hljs-operator">*</span> <span class="hljs-number">100</span>) <span class="hljs-operator">+</span> <span class="hljs-keyword">DAY</span>(GETDATE())
+<span class="hljs-comment">-- Outer insert - the updated records are added to the SCD2 table</span>
+<span class="hljs-keyword">INSERT</span> <span class="hljs-keyword">INTO</span> dbo.Client_SCD2 (BusinessKey, ClientName, Country, Town, Address1, Address2, ClientType, ClientSize, ValidFrom, IsCurrent)
+<span class="hljs-keyword">SELECT</span> ID, ClientName, Country, Town, Address1, Address2, ClientType, ClientSize, <span class="hljs-variable">@Today</span>, <span class="hljs-number">1</span>
+<span class="hljs-keyword">FROM</span>
+(
+<span class="hljs-comment">-- Merge statement</span>
+<span class="hljs-keyword">MERGE</span> <span class="hljs-keyword">INTO</span> dbo.Client_SCD2 <span class="hljs-keyword">AS</span> DST
+<span class="hljs-keyword">USING</span> CarSales.dbo.Client <span class="hljs-keyword">AS</span> SRC
+<span class="hljs-keyword">ON</span> (SRC.ID <span class="hljs-operator">=</span> DST.BusinessKey)
+<span class="hljs-comment">-- New records inserted</span>
+<span class="hljs-keyword">WHEN</span> <span class="hljs-keyword">NOT</span> MATCHED <span class="hljs-keyword">THEN</span> 
+<span class="hljs-keyword">INSERT</span> (BusinessKey, ClientName, Country, Town, County, Address1, Address2, ClientType, ClientSize, ValidFrom, IsCurrent)
+<span class="hljs-keyword">VALUES</span> (SRC.ID, SRC.ClientName, SRC.Country, SRC.Town, SRC.County, Address1, Address2, ClientType, ClientSize, <span class="hljs-variable">@Today</span>, <span class="hljs-number">1</span>)
+<span class="hljs-comment">-- Existing records updated if data changes</span>
+<span class="hljs-keyword">WHEN</span> MATCHED 
+<span class="hljs-keyword">AND</span> IsCurrent <span class="hljs-operator">=</span> <span class="hljs-number">1</span>
+<span class="hljs-keyword">AND</span> (
+ ISNULL(DST.ClientName,<span class="hljs-string">&#x27;&#x27;</span>) <span class="hljs-operator">&lt;&gt;</span> ISNULL(SRC.ClientName,<span class="hljs-string">&#x27;&#x27;</span>) 
+ <span class="hljs-keyword">OR</span> ISNULL(DST.Country,<span class="hljs-string">&#x27;&#x27;</span>) <span class="hljs-operator">&lt;&gt;</span> ISNULL(SRC.Country,<span class="hljs-string">&#x27;&#x27;</span>) 
+ <span class="hljs-keyword">OR</span> ISNULL(DST.Town,<span class="hljs-string">&#x27;&#x27;</span>) <span class="hljs-operator">&lt;&gt;</span> ISNULL(SRC.Town,<span class="hljs-string">&#x27;&#x27;</span>)
+ <span class="hljs-keyword">OR</span> ISNULL(DST.Address1,<span class="hljs-string">&#x27;&#x27;</span>) <span class="hljs-operator">&lt;&gt;</span> ISNULL(SRC.Address1,<span class="hljs-string">&#x27;&#x27;</span>)
+ <span class="hljs-keyword">OR</span> ISNULL(DST.Address2,<span class="hljs-string">&#x27;&#x27;</span>) <span class="hljs-operator">&lt;&gt;</span> ISNULL(SRC.Address2,<span class="hljs-string">&#x27;&#x27;</span>)
+ <span class="hljs-keyword">OR</span> ISNULL(DST.ClientType,<span class="hljs-string">&#x27;&#x27;</span>) <span class="hljs-operator">&lt;&gt;</span> ISNULL(SRC.ClientType,<span class="hljs-string">&#x27;&#x27;</span>)
+ <span class="hljs-keyword">OR</span> ISNULL(DST.ClientSize,<span class="hljs-string">&#x27;&#x27;</span>) <span class="hljs-operator">&lt;&gt;</span> ISNULL(SRC.ClientSize,<span class="hljs-string">&#x27;&#x27;</span>)
+ )
+<span class="hljs-comment">-- Update statement for a changed dimension record, to flag as no longer active</span>
+<span class="hljs-keyword">THEN</span> UPDATE 
+<span class="hljs-keyword">SET</span> DST.IsCurrent <span class="hljs-operator">=</span> <span class="hljs-number">0</span>, DST.ValidTo <span class="hljs-operator">=</span> <span class="hljs-variable">@Yesterday</span>
+OUTPUT SRC.ID, SRC.ClientName, SRC.Country, SRC.Town, SRC.Address1, SRC.Address2, SRC.ClientType, SRC.ClientSize, $Action <span class="hljs-keyword">AS</span> MergeAction
+) <span class="hljs-keyword">AS</span> MRG
+<span class="hljs-keyword">WHERE</span> MRG.MergeAction <span class="hljs-operator">=</span> <span class="hljs-string">&#x27;UPDATE&#x27;</span>
+;</code></pre><p><br br/> </p>
+<h2 id="the-fastest-sql-data-warehouse"><a class="header-link" href="#the-fastest-sql-data-warehouse"></a>The fastest SQL data warehouse</h2>
+<p>Yellowbrick Data is a leader in next-generation data warehousing. Built 
+for the hybrid cloud, the Yellowbrick Data Warehouse maximizes the value
+ of data analytics by providing ultra-fast, predictable performance and 
+flexible deployment options, including on-premises and in the cloud. As 
+the world’s fastest SQL data warehouse, the Yellowbrick Data Warehouse 
+easily scales from terabytes to petabytes, supports unmatched 
+concurrency and delivers database query speeds up to 100X faster than 
+traditional solutions.</p>
+<p>Yellowbrick Data was founded in 2014 by 
+experts in database and flash memory technologies to simplify data 
+warehousing. The company wanted to solve the challenges of high 
+availability, running complex mixed workloads, support for ad-hoc SQL, 
+computing correct answers on any schema, massive scalability and 
+supporting large numbers of concurrent users.</p>
+<p>Ultimately, Yellowbrick built the 
+Yellowbrick Data Warehouse which is quick to deploy, easy to expand and 
+simple to manage. And in doing so, the firm also fundamentally changed 
+the economics of enterprise data warehousing to deliver the lowest 
+acquisition and operating costs, and highest performance to its 
+customers.</p>
+<p><strong>Cloud Data Warehousing Without Limits</strong></p>
+<p>Yellowbrick offers the elasticity and 
+great user experience that Snowflake and other cloud-native data 
+warehouses have, along with the reliability, control, deployment 
+options, and excellent price/performance they don’t.</p>
+<p>Yellowbrick Data Warehouse is a modern, 
+MPP analytic database designed for the most demanding batch, real-time, 
+interactive, and mixed workloads. We continuously implement the latest 
+advances in software (e.g., Kubernetes) and hardware (e.g., NVMe) 
+protocols, combine these advances with smart thinking about database 
+architecture, and add on top a standards-based interface that’s familiar
+ to users (PostgreSQL) for ecosystem compatibility.</p>
+<p>The result is a modern, quickly 
+provisioned, and easy-to-use solution that blows the doors off rivals in
+ price/performance economics, and that can be deployed anywhere across 
+distributed clouds (private, public, and edge networks).</p>
+<p><strong>Modernize quickly and easily</strong></p>
+<p>Get started with a test drive or POC and
+ experience unmatched data warehouse performance. As a customer, our 
+partners support you with a seamless production migration, providing the
+ automation and expertise needed to get you on Yellowbrick.</p>
+<p><strong>Safeguard your data under rigorous compliance standards</strong></p>
+<p>Yellowbrick Data has experience serving 
+customers in highly-regulated industries and government going back to 
+its founding, so data and environment security are core values.</p>
+<br br/>
+
+<h2 id="paving-the-yellowbrick-road"><a class="header-link" href="#paving-the-yellowbrick-road"></a>Paving the Yellowbrick road</h2>
+<p>Traditionally, data warehouses meant enterprises had to either commit
+ to one platform or suffer the complexity of managing multiple 
+quasi-compatible infrastructures. With that in mind, <a href="https://www.yellowbrick.com/">Yellowbrick Data</a> recently launched Yellowbrick Manager to make it easier for 
+administrators to manage data warehouses across distributed cloud and 
+on-premises deployments with a simplified interface.</p>
+<p>Users can control Yellowbrick data warehouses in public clouds, on Yellowbrick hardware instances, <a href="https://venturebeat.com/2021/04/13/robin-io-brings-pay-as-you-go-pricing-to-red-hat-private-clouds/">in private clouds,</a> and even at the network edge, the company said. Yellowbrick Manager 
+provides a unified control system that uses the Kubernetes container 
+orchestration system to enable users to manage and control both cloud 
+and on-premises deployments with enhanced performance capabilities.</p>
+<p>“It’s this single unified control plane, together with the adoption of 
+Kubernetes in our database software, that sets us apart,” Yellowbrick 
+CTO Mark Cusack told VentureBeat.</p>
+<p>The company also added agile data movement capabilities to help 
+customers integrate Yellowbrick with data lakes built on cloud object 
+stores like Amazon S3. A technology preview is expected in early May, 
+and general availability is set for the second half of 2021. Also in 
+early May, there will be an update to Yellowbrick data warehouse release
+ 5, with data lake integration enhancements that include native support 
+for cloud object storage (including Amazon S3 and Azure Data Lake 
+Storage Gen 2).</p>
+<br br/>
+
+<h2 id="working-across-clouds"><a class="header-link" href="#working-across-clouds"></a>Working across clouds</h2>
+<p>One of the criticisms of hybrid clouds has been around the disjointed
+ set of technologies and user experiences across private and public 
+clouds. There are different identity and access management approaches, 
+which makes it harder to govern <a href="https://venturebeat.com/2021/03/18/the-great-data-decentralization-is-coming-are-you-ready/">access to data across these environments</a>,
+ and they are typically provisioned differently. Yellowbrick is 
+positioning itself as the first data warehouse for the distributed cloud
+ by introducing a unified control plane that works across the most 
+common cloud platforms. This control plane increases the simplicity of 
+running multiple data warehouses in different physical and 
+line-of-business locations across an enterprise.</p>
+<p>The Kubernetes cloud native architecture provides Yellowbrick Manager with a
+ single unified control panel to provision new data warehouse instances 
+in different clouds, manage existing infrastructure, and monitor 
+deployments.</p>
+<p>Yellowbrick said Yellowbrick Data Warehouse queries run 3 times 
+faster on Andromeda-optimized instances for private clouds than on the 
+company’s first-generation architecture. The performance improvements 
+are also the result of the company switching to new AMD 64-core CPUs, 
+increasing bandwidth between server notes, and adding dual proprietary 
+Kalidah scan accelerator cards that offload workloads such as filtering,
+ compression/decompression, and row/column transposition from CPUs.</p>
+<p>“The Andromeda instance is the fastest platform to run Yellowbrick on,” Cusack said.</p>
+<p>The company is optimizing deployments to take advantage of 
+differences across the big cloud providers. For example, if a public 
+cloud instance has high-performance storage, Yellowbrick can adapt to 
+the underlying hardware to take advantage of those benefits.</p>
+<br br/>
+
+<h2 id="the-yellowbrick-approach"><a class="header-link" href="#the-yellowbrick-approach"></a>The Yellowbrick approach</h2>
+<p>Yellowbrick is focusing on improving the management aspects for distributed clouds rather than joining them together directly.</p>
+<p>Competitors tend to fall into two major categories: legacy data 
+warehouses such as Teradata, Oracle, and SQL Server or cloud-only data 
+warehouses like Snowflake, Amazon Redshift, and Microsoft Azure Synapse.
+ Yellowbrick seeks to differentiate itself by taking a unified approach 
+to addressing distributed data challenges like data gravity and 
+sovereignty requirements. It was designed from the ground up to optimize
+ price/performance across bare metal and virtualized infrastructure in 
+public clouds.</p>
+<p>Yellowbrick
+ product marketing VP Justin Kestelyn says Yellowbrick has an advantage 
+over legacy vendors that have been doubling down on older architectures 
+and have a harder time with real-time analytics. Traditional cloud 
+vendors have not been aggressively pursuing hybrid options for analytics
+ at the edge.</p>
+<p>“We’re winning business from all of these vendors by providing the best price/performance and the lowest deployment risk,” Cusack said.</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script type="text/javascript" src="assets/js/bootstrap.min.js"></script>
+</body>
+</html>
